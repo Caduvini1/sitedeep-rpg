@@ -1,0 +1,53 @@
+// api/fichas/index.js — GET (listar) e POST (criar)
+const https = require('https');
+
+function getSession(req) {
+  const match = (req.headers.cookie || '').match(/discord_session=([^;]+)/);
+  if (!match) return null;
+  try { return JSON.parse(Buffer.from(match[1], 'base64').toString()); } catch { return null; }
+}
+
+function supabase(method, path, body, anonKey, supabaseUrl) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(`${supabaseUrl}/rest/v1/${path}`);
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const headers = {
+      'apikey': anonKey,
+      'Authorization': `Bearer ${anonKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (bodyStr) headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    if (method === 'POST') headers['Prefer'] = 'return=representation';
+
+    const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method, headers }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(data); } });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+module.exports = async function (req, res) {
+  const user = getSession(req);
+  if (!user) return res.status(401).json({ error: 'Não autenticado' });
+
+  const KEY = process.env.SUPABASE_ANON_KEY;
+  const URL = process.env.SUPABASE_URL;
+
+  if (req.method === 'GET') {
+    const data = await supabase('GET', `fichas?user_id=eq.${user.id}&order=updated_at.desc&select=id,name,data,updated_at`, null, KEY, URL);
+    return res.status(200).json(data);
+  }
+
+  if (req.method === 'POST') {
+    const { name, data } = req.body;
+    const result = await supabase('POST', 'fichas', { user_id: user.id, name: name || 'Sem Nome', data: data || {} }, KEY, URL);
+    return res.status(201).json(result);
+  }
+
+  res.status(405).end();
+};

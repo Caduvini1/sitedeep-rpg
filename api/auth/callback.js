@@ -1,69 +1,111 @@
 // api/auth/callback.js
-// Recebe o código do Discord, troca por token, busca usuário e cria sessão
+const https = require('https');
 
-export default async function handler(req, res) {
+function httpPost(url, headers, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname,
+      method: 'POST', headers
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => resolve(JSON.parse(data)));
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+function httpGet(url, headers) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    https.get({ hostname: u.hostname, path: u.pathname, headers }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => resolve(JSON.parse(data)));
+    }).on('error', reject);
+  });
+}
+
+function supabaseUpsert(table, record) {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${table}`;
+  const body = JSON.stringify(record);
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = https.request({
+      hostname: u.hostname, path: `${u.pathname}?on_conflict=id`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'apikey': process.env.SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+        'Prefer': 'resolution=merge-duplicates'
+      }
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+module.exports = async function (req, res) {
   const { code } = req.query;
-
-  if (!code) {
-    return res.redirect('/?error=no_code');
-  }
-
-  const clientId     = process.env.DISCORD_CLIENT_ID;
-  const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-  const redirectUri  = process.env.DISCORD_REDIRECT_URI ||
-    `https://${req.headers.host}/api/auth/callback`;
+  if (!code) return res.redirect('/?error=no_code');
 
   try {
-    // 1. Troca o código pelo access token
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id:     clientId,
-        client_secret: clientSecret,
-        grant_type:    'authorization_code',
-        code,
-        redirect_uri:  redirectUri,
-      }),
-    });
+    // 1. Troca o código pelo token do Discord
+    const bodyParams = new URLSearchParams({
+      client_id:     process.env.DISCORD_CLIENT_ID,
+      client_secret: process.env.DISCORD_CLIENT_SECRET,
+      grant_type:    'authorization_code',
+      code,
+      redirect_uri:  process.env.DISCORD_REDIRECT_URI,
+    }).toString();
 
-    const tokenData = await tokenRes.json();
-
-    if (!tokenData.access_token) {
-      console.error('Token error:', tokenData);
-      return res.redirect('/?error=token_failed');
-    }
-
-    // 2. Busca os dados do usuário no Discord
-    const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-
-    const user = await userRes.json();
-
-    if (!user.id) {
-      return res.redirect('/?error=user_failed');
-    }
-
-    // 3. Cria um cookie de sessão simples com os dados do usuário
-    const sessionData = {
-      id:            user.id,
-      username:      user.username,
-      discriminator: user.discriminator || '0',
-      avatar:        user.avatar,
-      global_name:   user.global_name || user.username,
-    };
-
-    const encoded = Buffer.from(JSON.stringify(sessionData)).toString('base64');
-
-    // Cookie válido por 7 dias
-    res.setHeader('Set-Cookie', 
-      `discord_session=${encoded}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
+    const tokenData = await httpPost(
+      'https://discord.com/api/oauth2/token',
+      { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(bodyParams) },
+      bodyParams
     );
 
+    if (!tokenData.access_token) return res.redirect('/?error=token_failed');
+
+    // 2. Busca dados do usuário no Discord
+    const user = await httpGet('https://discord.com/api/users/@me', {
+      Authorization: `Bearer ${tokenData.access_token}`
+    });
+
+    if (!user.id) return res.redirect('/?error=user_failed');
+
+    // 3. Salva/atualiza usuário no Supabase
+    await supabaseUpsert('users', {
+      id:          user.id,
+      username:    user.username,
+      global_name: user.global_name || user.username,
+      avatar:      user.avatar || null,
+    });
+
+    // 4. Cria cookie de sessão
+    const session = Buffer.from(JSON.stringify({
+      id:          user.id,
+      username:    user.username,
+      global_name: user.global_name || user.username,
+      avatar:      user.avatar || null,
+    })).toString('base64');
+
+    res.setHeader('Set-Cookie',
+      `discord_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`
+    );
     res.redirect('/');
   } catch (err) {
-    console.error('Callback error:', err);
+    console.error(err);
     res.redirect('/?error=server_error');
   }
-}
+};
