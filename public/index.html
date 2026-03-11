@@ -1,17 +1,695 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#030b0a" />
-    <meta name="description" content="Deepwoken RPG — Ficha de Personagem Interativa" />
-    <title>Deepwoken RPG — Ficha</title>
-    <style>
-      body { margin: 0; background: #030b0a; }
-      * { box-sizing: border-box; }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deepwoken RPG — Ficha</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #030b0a; color: #8ab8b0; font-family: Georgia, serif; }
+    ::-webkit-scrollbar { width: 4px; background: #030b0a; }
+    ::-webkit-scrollbar-thumb { background: #1e4a44; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 0.3; }
+    select option { background: #060f0e; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+const attrMod = (v) => {
+  if (v <= 1) return -5; if (v <= 3) return -4; if (v <= 5) return -3;
+  if (v <= 7) return -2; if (v <= 9) return -1; if (v <= 11) return 0;
+  if (v <= 13) return 1; if (v <= 15) return 2; if (v <= 17) return 3;
+  if (v <= 19) return 4; if (v <= 21) return 5; if (v <= 23) return 6;
+  if (v <= 25) return 7; if (v <= 27) return 8; if (v <= 29) return 9;
+  return 10;
+};
+const fmtMod = (v) => (v >= 0 ? `+${v}` : `${v}`);
+
+const RACAS = ["Etrean","Felinor","Gremor","Khan","Tiran","Vesperian","Adret","Canor"];
+const ATTUNEMENTS = ["Galebreath","Flamecharm","Thundercall","Frostdraw","No Attunement","Metal","Sombra","Sangue"];
+const OATHS = ["Oathless","Jetstriker","Arcwarder","Silentheart","Starkindred","Visionshaper","Linkstrider","Fadetrimmer","Dawnwalker","Saltchemist","Blindseer","Blightsurger","Soulbreaker","Contractor"];
+const FACCOES = ["Kingdom of Etrea","The Central Authority","The Hundred Legions","The Hive","The Divers","The Ignition Union","Lost Celtor","Children of Navae","The Ministry"];
+const REP_LABELS = ["Hostil","Neutro","Favorável","Aliado"];
+const REP_COLORS = ["#c0392b","#7f8c8d","#27ae60","#2980b9"];
+const ATTR_DEFS = [
+  { key:"str", label:"STR", desc:"Força" },
+  { key:"fort", label:"FORT", desc:"Fortitude" },
+  { key:"agi", label:"AGI", desc:"Agilidade" },
+  { key:"int_", label:"INT", desc:"Inteligência" },
+  { key:"will", label:"WILL", desc:"Willpower" },
+  { key:"cha", label:"CHA", desc:"Carisma" },
+];
+
+const SAVE_KEY = 'deepwoken_saves_v2';
+const loadSaves = () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch { return {}; } };
+
+// ── styles ───────────────────────────────────────────────────────────────────
+const numInput = {
+  width:42, background:"#060f0e", border:"1px solid #1e3a36",
+  color:"#c8e8e0", fontFamily:"'Cinzel',serif", fontSize:12,
+  textAlign:"center", padding:"2px 4px", outline:"none", borderRadius:2
+};
+const smallBtn = {
+  width:20, height:20, background:"#0d2420", border:"1px solid #2a5a54",
+  color:"#4be0c0", cursor:"pointer", fontSize:14, padding:0, lineHeight:1,
+  borderRadius:2, display:"inline-flex", alignItems:"center", justifyContent:"center"
+};
+const selectStyle = {
+  background:"#060f0e", border:"1px solid #1e3a36", color:"#8ab8b0",
+  fontFamily:"'Cinzel',serif", fontSize:10, padding:"5px 6px",
+  outline:"none", width:"100%", borderRadius:2
+};
+const textInput = {
+  background:"#060f0e", border:"1px solid #1e3a36", color:"#c8e8e0",
+  fontFamily:"'Cinzel',serif", fontSize:12, padding:"6px 8px",
+  outline:"none", width:"100%", borderRadius:2
+};
+
+// ── sub-components ────────────────────────────────────────────────────────────
+function StatBar({ label, current, max, color, onCurrent, onMax, readonlyMax }) {
+  return (
+    <div style={{ marginBottom:10 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+        <span style={{ fontFamily:"'Cinzel',serif", fontSize:11, color:"#8fada8", letterSpacing:2 }}>{label}</span>
+        <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+          <input type="number" min={0} max={max} value={current}
+            onChange={e=>onCurrent(Math.max(0,Math.min(max,+e.target.value)))}
+            style={numInput}/>
+          <span style={{ color:"#4a6a66", fontSize:11 }}>/</span>
+          {readonlyMax
+            ? <span style={{ ...numInput, display:"inline-flex", alignItems:"center", justifyContent:"center", opacity:0.6 }}>{max}</span>
+            : <input type="number" min={1} max={99} value={max}
+                onChange={e=>onMax(Math.max(1,+e.target.value))} style={numInput}/>
+          }
+        </div>
+      </div>
+      <div style={{ height:7, background:"#0d1f1e", borderRadius:2, overflow:"hidden", border:"1px solid #1e3a36" }}>
+        <div style={{
+          height:"100%", borderRadius:2, transition:"width .3s",
+          background:`linear-gradient(90deg, ${color}, ${color}88)`,
+          width:`${Math.min(100,(current/Math.max(1,max))*100)}%`
+        }}/>
+      </div>
+    </div>
+  );
+}
+
+function AttrBox({ def, value, onChange }) {
+  const m = attrMod(value);
+  return (
+    <div style={{
+      border:"1px solid #1e3a36", background:"#060f0e",
+      padding:"10px 8px", textAlign:"center",
+      clipPath:"polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px))"
+    }}>
+      <div style={{ fontFamily:"'Cinzel',serif", fontSize:9, color:"#4a7a74", letterSpacing:3, marginBottom:4 }}>{def.label}</div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+        <button onClick={()=>onChange(Math.max(1,value-1))} style={smallBtn}>−</button>
+        <span style={{ fontFamily:"'Cinzel',serif", fontSize:22, color:"#c8e8e0", fontWeight:700, minWidth:28, display:"inline-block" }}>{value}</span>
+        <button onClick={()=>onChange(Math.min(20,value+1))} style={smallBtn}>+</button>
+      </div>
+      <div style={{
+        marginTop:4, fontFamily:"monospace", fontSize:14,
+        color: m >= 3 ? "#4be0c0" : m <= -2 ? "#c05050" : "#7aada8", fontWeight:700
+      }}>{fmtMod(m)}</div>
+      <div style={{ fontSize:8, color:"#2e5550", marginTop:2, letterSpacing:1 }}>{def.desc.toUpperCase()}</div>
+    </div>
+  );
+}
+
+function RepBadge({ label, level, onChange }) {
+  return (
+    <div style={{ marginBottom:8 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+        <span style={{ fontSize:10, color:"#6a9a94", fontFamily:"'Cinzel',serif", letterSpacing:1 }}>{label}</span>
+        <span style={{ fontSize:10, fontWeight:700, color: REP_COLORS[level] }}>{REP_LABELS[level]}</span>
+      </div>
+      <div style={{ display:"flex", gap:3 }}>
+        {REP_LABELS.map((r,i) => (
+          <button key={r} onClick={()=>onChange(i)} style={{
+            flex:1, height:6, border:"none", cursor:"pointer", borderRadius:1,
+            background: i <= level ? REP_COLORS[level] : "#1a2e2c", transition:"background .2s"
+          }}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children, accent="#1e4a44" }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{
+        fontFamily:"'Cinzel',serif", fontSize:10, letterSpacing:4,
+        color:"#4a8a84", marginBottom:8, borderBottom:`1px solid ${accent}`,
+        paddingBottom:4, textTransform:"uppercase"
+      }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function NotesArea({ value, onChange, placeholder, rows=4 }) {
+  return (
+    <textarea value={value} onChange={e=>onChange(e.target.value)}
+      placeholder={placeholder} rows={rows}
+      style={{
+        width:"100%", background:"#060f0e", border:"1px solid #1e3a36",
+        color:"#8ab8b0", fontFamily:"'Courier New',monospace", fontSize:11,
+        padding:"8px", resize:"vertical", outline:"none", borderRadius:2,
+        lineHeight:1.6
+      }}/>
+  );
+}
+
+// ── MAIN SHEET ────────────────────────────────────────────────────────────────
+function DeepwokenSheet({ initialData, onSave }) {
+  const D = initialData || {};
+
+  const [name, setName] = useState(D.name || "");
+  const [raca, setRaca] = useState(D.raca || "Etrean");
+  const [attunement, setAttunement] = useState(D.attunement || "Galebreath");
+  const [oath, setOath] = useState(D.oath || "Oathless");
+  const [nivel, setNivel] = useState(D.nivel || 1);
+  const [background, setBackground] = useState(D.background || "");
+  const [attrs, setAttrs] = useState(D.attrs || { str:10, fort:10, agi:10, int_:10, will:10, cha:10 });
+  const setAttr = (k,v) => setAttrs(a=>({...a,[k]:v}));
+
+  const fortMod = attrMod(attrs.fort);
+  const agiMod  = attrMod(attrs.agi);
+  const willMod = attrMod(attrs.will);
+
+  const [hp, setHp] = useState(D.hp ?? 10);
+  const [maxHp, setMaxHp] = useState(D.maxHp ?? 10);
+  const [mana, setMana] = useState(D.mana ?? 8);
+  const [postura, setPostura] = useState(D.postura ?? 8);
+  const [san, setSan] = useState(D.san ?? 8);
+  const [exaustao, setExaustao] = useState(D.exaustao ?? 0);
+  const [armadura, setArmadura] = useState(D.armadura ?? 0);
+
+  const [reps, setReps] = useState(D.reps || Object.fromEntries(FACCOES.map(f=>[f,1])));
+  const setRep = (f,v) => setReps(r=>({...r,[f]:v}));
+
+  const [mantras, setMantras] = useState(D.mantras || ["","","",""]);
+  const setMantra = (i,v) => setMantras(m=>{const n=[...m];n[i]=v;return n;});
+  const [talentos, setTalentos] = useState(D.talentos || ["",""]);
+  const setTalento = (i,v) => setTalentos(t=>{const n=[...t];n[i]=v;return n;});
+
+  const [equipamentos, setEquipamentos] = useState(D.equipamentos || "Arma básica\nArmadura leve\n3 Rações\nMochila");
+  const [notas, setNotas] = useState(D.notas || "");
+  const [objetivos, setObjetivos] = useState(D.objetivos || "");
+  const [aliados, setAliados] = useState(D.aliados || "");
+
+  const [tab, setTab] = useState("ficha");
+
+  useEffect(() => {
+    if (!initialData) return;
+    const D2 = initialData;
+    setName(D2.name||""); setRaca(D2.raca||"Etrean"); setAttunement(D2.attunement||"Galebreath");
+    setOath(D2.oath||"Oathless"); setNivel(D2.nivel||1); setBackground(D2.background||"");
+    setAttrs(D2.attrs||{str:10,fort:10,agi:10,int_:10,will:10,cha:10});
+    setHp(D2.hp??10); setMaxHp(D2.maxHp??10); setMana(D2.mana??8);
+    setPostura(D2.postura??8); setSan(D2.san??8); setExaustao(D2.exaustao??0); setArmadura(D2.armadura??0);
+    setReps(D2.reps||Object.fromEntries(FACCOES.map(f=>[f,1])));
+    setMantras(D2.mantras||["","","",""]); setTalentos(D2.talentos||["",""]);
+    setEquipamentos(D2.equipamentos||"Arma básica\nArmadura leve\n3 Rações\nMochila");
+    setNotas(D2.notas||""); setObjetivos(D2.objetivos||""); setAliados(D2.aliados||"");
+  }, [initialData]);
+
+  const CA = 8 + agiMod + armadura;
+  const maxMana = nivel <= 4 ? 8 : nivel <= 9 ? 11 : 14;
+  const maxSan = 8 + willMod;
+  const maxCarga = attrs.str + 5;
+
+  const handleSave = () => {
+    if (onSave) onSave({ name, raca, attunement, oath, nivel, background, attrs,
+      hp, maxHp, mana, postura, san, exaustao, armadura,
+      reps, mantras, talentos, equipamentos, notas, objetivos, aliados });
+  };
+
+  const tabs = [
+    { id:"ficha", label:"FICHA" },
+    { id:"combate", label:"COMBATE" },
+    { id:"faccoes", label:"FACÇÕES" },
+    { id:"notas", label:"NOTAS" },
+  ];
+
+  return (
+    <div style={{
+      minHeight:"100vh", background:"#030b0a",
+      backgroundImage:`
+        radial-gradient(ellipse at 20% 10%, #0a2520 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 90%, #071a18 0%, transparent 50%),
+        repeating-linear-gradient(0deg, transparent, transparent 40px, #0a1a181a 40px, #0a1a181a 41px),
+        repeating-linear-gradient(90deg, transparent, transparent 40px, #0a1a181a 40px, #0a1a181a 41px)
+      `,
+      padding:"16px", color:"#8ab8b0"
+    }}>
+      {/* HEADER */}
+      <div style={{ textAlign:"center", marginBottom:20, borderBottom:"1px solid #1e3a36", paddingBottom:16, position:"relative" }}>
+        <div style={{
+          fontFamily:"'Cinzel Decorative',serif", fontSize:28, fontWeight:700,
+          background:"linear-gradient(180deg, #7ae8d8 0%, #3a9a8a 50%, #1a5a50 100%)",
+          WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", letterSpacing:6, lineHeight:1
+        }}>DEEPWOKEN</div>
+        <div style={{ fontFamily:"'Cinzel',serif", fontSize:9, letterSpacing:8, color:"#2e6a60", marginTop:4 }}>
+          FICHA DE PERSONAGEM
+        </div>
+        <button onClick={handleSave} style={{
+          marginTop:10, padding:"6px 22px", background:"#0d2e28",
+          border:"1px solid #2e7a6e", color:"#4be0c0", cursor:"pointer",
+          fontFamily:"'Cinzel',serif", fontSize:9, letterSpacing:3, borderRadius:2
+        }}>✦ SALVAR FICHA</button>
+      </div>
+
+      {/* TABS */}
+      <div style={{ display:"flex", gap:2, marginBottom:16 }}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1, padding:"8px 0", fontFamily:"'Cinzel',serif", fontSize:9, letterSpacing:3,
+            background: tab===t.id ? "#0d2e28" : "transparent",
+            border:`1px solid ${tab===t.id ? "#2e7a6e" : "#1a3530"}`,
+            color: tab===t.id ? "#4be0c0" : "#3a6a64", cursor:"pointer", transition:"all .2s",
+            clipPath: tab===t.id ? "polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))" : "none"
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ═══ FICHA TAB ═══ */}
+      {tab==="ficha" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <div>
+            <Section title="Identidade">
+              <div style={{ marginBottom:8 }}>
+                <div style={{ fontSize:9, color:"#3a6a64", marginBottom:3, letterSpacing:2 }}>NOME</div>
+                <input value={name} onChange={e=>setName(e.target.value)} placeholder="Nome do personagem..." style={textInput}/>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                <div>
+                  <div style={{ fontSize:9, color:"#3a6a64", marginBottom:3, letterSpacing:2 }}>RAÇA</div>
+                  <select value={raca} onChange={e=>setRaca(e.target.value)} style={selectStyle}>
+                    {RACAS.map(r=><option key={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize:9, color:"#3a6a64", marginBottom:3, letterSpacing:2 }}>NÍVEL</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <button onClick={()=>setNivel(n=>Math.max(1,n-1))} style={smallBtn}>−</button>
+                    <span style={{ fontFamily:"'Cinzel',serif", fontSize:18, color:"#c8e8e0", minWidth:24, textAlign:"center" }}>{nivel}</span>
+                    <button onClick={()=>setNivel(n=>Math.min(20,n+1))} style={smallBtn}>+</button>
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginBottom:8 }}>
+                <div style={{ fontSize:9, color:"#3a6a64", marginBottom:3, letterSpacing:2 }}>ATTUNEMENT</div>
+                <select value={attunement} onChange={e=>setAttunement(e.target.value)} style={selectStyle}>
+                  {ATTUNEMENTS.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:9, color:"#3a6a64", marginBottom:3, letterSpacing:2 }}>OATH</div>
+                <select value={oath} onChange={e=>setOath(e.target.value)} style={selectStyle}>
+                  {OATHS.map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+            </Section>
+
+            <Section title="Atributos">
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6 }}>
+                {ATTR_DEFS.map(d=>(
+                  <AttrBox key={d.key} def={d} value={attrs[d.key]} onChange={v=>setAttr(d.key,v)}/>
+                ))}
+              </div>
+            </Section>
+
+            <Section title="Background">
+              <NotesArea value={background} onChange={setBackground} placeholder="História, motivações, segredos..." rows={4}/>
+            </Section>
+          </div>
+
+          <div>
+            <Section title="Recursos Vitais">
+              <StatBar label="VIDA" current={hp} max={maxHp} color="#c0392b" onCurrent={setHp} onMax={setMaxHp}/>
+              <StatBar label="MANA" current={mana} max={maxMana} color="#2980b9" onCurrent={setMana} onMax={()=>{}} readonlyMax/>
+              <StatBar label="POSTURA" current={postura} max={8} color="#f39c12" onCurrent={setPostura} onMax={()=>{}} readonlyMax/>
+              <StatBar label="SANIDADE" current={san} max={maxSan} color="#8e44ad" onCurrent={setSan} onMax={()=>{}} readonlyMax/>
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginTop:10 }}>
+                {[
+                  { label:"CA", value:CA, sub:`base ${8+agiMod}` },
+                  { label:"CARGA", value:maxCarga, sub:"STR+5" },
+                  { label:"EXAUSTÃO", value:`${exaustao}/5`, sub:`−${exaustao} em dados` },
+                ].map(s=>(
+                  <div key={s.label} style={{
+                    border:"1px solid #1e3a36", background:"#060f0e",
+                    padding:"8px", textAlign:"center",
+                    clipPath:"polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))"
+                  }}>
+                    <div style={{ fontSize:9, color:"#3a6a64", letterSpacing:2 }}>{s.label}</div>
+                    <div style={{ fontFamily:"'Cinzel',serif", fontSize:18, color:"#c8e8e0", margin:"2px 0" }}>{s.value}</div>
+                    <div style={{ fontSize:8, color:"#2e5550" }}>{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                <span style={{ fontSize:9, color:"#3a6a64", letterSpacing:2 }}>EXAUSTÃO</span>
+                {[0,1,2,3,4,5].map(i=>(
+                  <button key={i} onClick={()=>setExaustao(i)} style={{
+                    width:18, height:18, borderRadius:"50%",
+                    background: i<=exaustao && exaustao>0 ? "#c0392b" : "#0d1f1e",
+                    border:`1px solid ${i<=exaustao && exaustao>0 ? "#c0392b" : "#2a4a44"}`,
+                    cursor:"pointer"
+                  }}/>
+                ))}
+              </div>
+
+              <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:9, color:"#3a6a64", letterSpacing:2 }}>ARMADURA +CA</span>
+                <input type="number" min={0} max={10} value={armadura}
+                  onChange={e=>setArmadura(+e.target.value)} style={{...numInput, width:48}}/>
+              </div>
+            </Section>
+
+            <Section title="Mantras">
+              {mantras.map((m,i)=>(
+                <div key={i} style={{ marginBottom:6 }}>
+                  <input value={m} onChange={e=>setMantra(i,e.target.value)}
+                    placeholder={`Mantra ${i+1}...`} style={{...textInput, fontSize:11, color:"#7ae8d8"}}/>
+                </div>
+              ))}
+              <button onClick={()=>setMantras(m=>[...m,""])} style={{
+                width:"100%", padding:"5px", background:"transparent",
+                border:"1px dashed #1e4a44", color:"#2e7a6e", cursor:"pointer",
+                fontSize:10, fontFamily:"'Cinzel',serif", letterSpacing:2
+              }}>+ MANTRA</button>
+            </Section>
+
+            <Section title="Talentos">
+              {talentos.map((t,i)=>(
+                <div key={i} style={{ marginBottom:6 }}>
+                  <input value={t} onChange={e=>setTalento(i,e.target.value)}
+                    placeholder={`Talento ${i+1}...`} style={textInput}/>
+                </div>
+              ))}
+              <button onClick={()=>setTalentos(t=>[...t,""])} style={{
+                width:"100%", padding:"5px", background:"transparent",
+                border:"1px dashed #1e4a44", color:"#2e7a6e", cursor:"pointer",
+                fontSize:10, fontFamily:"'Cinzel',serif", letterSpacing:2
+              }}>+ TALENTO</button>
+            </Section>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ COMBATE TAB ═══ */}
+      {tab==="combate" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <div>
+            <Section title="Referência de Combate">
+              {[
+                ["Ataque","1d20 + Atributo ≥ CA"],
+                ["Arma Leve","1d4 + STR (2× ataques)"],
+                ["Arma Média","1d6 + STR"],
+                ["Arma Pesada","1d8 + STR (STR mín 12)"],
+                ["Movimento","9m padrão"],
+                ["Parry","1d20 + defesa vs ataque"],
+                ["Parry = ataque","Nega dano"],
+                ["Parry ≥ +2","Nega dano + ataque de oportunidade"],
+                ["Parry falho","−2 postura; próximo −1d4"],
+                ["Bloquear Leve","1 Postura / dano ÷2"],
+                ["Bloquear Médio","2 Postura / dano ÷2"],
+                ["Bloquear Pesado","3 Postura / dano ÷2"],
+              ].map(([k,v])=>(
+                <div key={k} style={{
+                  display:"flex", justifyContent:"space-between",
+                  borderBottom:"1px solid #0d2420", padding:"5px 0", fontSize:11
+                }}>
+                  <span style={{ color:"#4a8a84", fontFamily:"'Cinzel',serif", fontSize:10, letterSpacing:1 }}>{k}</span>
+                  <span style={{ color:"#8ab8b0", fontFamily:"monospace" }}>{v}</span>
+                </div>
+              ))}
+            </Section>
+
+            <Section title="Estados de Combate" accent="#3a2010">
+              {[
+                { label:"QUEBRA DE POSTURA", color:"#e67e22", desc:"Atordoado 1 rodada • Dano ×2" },
+                { label:"QUEIMANDO", color:"#e74c3c", desc:"1d4 por 1d3 turnos" },
+                { label:"LENTIDÃO", color:"#3498db", desc:"−2m deslocamento" },
+                { label:"INSTABILIDADE", color:"#9b59b6", desc:"−1d4 Reação/Esquiva" },
+                { label:"STAGGER", color:"#f39c12", desc:"−1d6 próximo ataque" },
+                { label:"STUN LEVE", color:"#e67e22", desc:"−1d6 Reação" },
+              ].map(s=>(
+                <div key={s.label} style={{
+                  border:`1px solid ${s.color}44`, background:`${s.color}0a`,
+                  padding:"6px 8px", marginBottom:4, borderRadius:2,
+                  display:"flex", justifyContent:"space-between", alignItems:"center"
+                }}>
+                  <span style={{ fontFamily:"'Cinzel',serif", fontSize:9, color:s.color, letterSpacing:2 }}>{s.label}</span>
+                  <span style={{ fontSize:10, color:"#7a9a94", fontFamily:"monospace" }}>{s.desc}</span>
+                </div>
+              ))}
+            </Section>
+          </div>
+
+          <div>
+            <Section title="Tracker de Combate">
+              <StatBar label="VIDA" current={hp} max={maxHp} color="#c0392b" onCurrent={setHp} onMax={setMaxHp}/>
+              <StatBar label="POSTURA" current={postura} max={8} color="#f39c12" onCurrent={setPostura} onMax={()=>{}} readonlyMax/>
+              <StatBar label="MANA" current={mana} max={maxMana} color="#2980b9" onCurrent={setMana} onMax={()=>{}} readonlyMax/>
+              <StatBar label="SANIDADE" current={san} max={maxSan} color="#8e44ad" onCurrent={setSan} onMax={()=>{}} readonlyMax/>
+
+              <div style={{ marginTop:12, marginBottom:12 }}>
+                <div style={{ fontSize:9, color:"#3a6a64", letterSpacing:3, marginBottom:8 }}>AÇÕES DO TURNO</div>
+                {["Ação Principal","Movimento (9m)","Reação (1×/rodada)"].map(a=>(
+                  <div key={a} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid #0d2420" }}>
+                    <div style={{ width:14, height:14, border:"1px solid #2a6a64", borderRadius:2, flexShrink:0 }}/>
+                    <span style={{ fontSize:11, color:"#6a9a94" }}>{a}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+
+            <Section title="Resistências">
+              <div style={{ fontSize:10, color:"#4a7a74", marginBottom:8 }}>(1× por combate — reduzem dano base)</div>
+              {[
+                { label:"Res. Leve", dice:"1d4", color:"#27ae60" },
+                { label:"Res. Moderada", dice:"1d6", color:"#f39c12" },
+              ].map(r=>(
+                <div key={r.label} style={{
+                  display:"flex", justifyContent:"space-between", alignItems:"center",
+                  padding:"6px 8px", border:"1px solid #1e3a36", marginBottom:4, background:"#060f0e"
+                }}>
+                  <span style={{ fontFamily:"'Cinzel',serif", fontSize:10, color:"#6a9a94" }}>{r.label}</span>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <span style={{ fontFamily:"monospace", color:r.color, fontSize:13 }}>{r.dice}</span>
+                    <div style={{ width:14, height:14, border:`1px solid ${r.color}88`, borderRadius:2 }}/>
+                  </div>
+                </div>
+              ))}
+            </Section>
+
+            <Section title="Equipamentos">
+              <NotesArea value={equipamentos} onChange={setEquipamentos} placeholder="Armas, armaduras, itens..." rows={6}/>
+            </Section>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ FACÇÕES TAB ═══ */}
+      {tab==="faccoes" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <div>
+            <Section title="Reputação entre Facções">
+              <div style={{ fontSize:9, color:"#2e5550", marginBottom:10, letterSpacing:1 }}>HOSTIL → NEUTRO → FAVORÁVEL → ALIADO</div>
+              {FACCOES.map(f=>(
+                <RepBadge key={f} label={f} level={reps[f]} onChange={v=>setRep(f,v)}/>
+              ))}
+            </Section>
+          </div>
+          <div>
+            <Section title="Referência de Facções">
+              {[
+                { name:"Kingdom of Etrea", desc:"Estado mais antigo. Militar estável. Rival da Authority.", color:"#c0392b" },
+                { name:"The Central Authority", desc:"Expansão e controle territorial. Poder dominante.", color:"#e67e22" },
+                { name:"The Hundred Legions", desc:"Disciplina marcial. Tradição guerreira.", color:"#f39c12" },
+                { name:"The Hive", desc:"Isolacionista. Biotecnologia orgânica.", color:"#27ae60" },
+                { name:"The Divers", desc:"Exploração das Depths. Alto índice de mortalidade.", color:"#2980b9" },
+                { name:"The Ignition Union", desc:"Engenharia e tecnologia avançada.", color:"#8e44ad" },
+                { name:"Lost Celtor", desc:"Civilização afundada. Ruínas submersas.", color:"#7f8c8d" },
+                { name:"Children of Navae", desc:"Tribos nômades. Identidade espiritual.", color:"#1abc9c" },
+                { name:"The Ministry", desc:"Sombras políticas/religiosas. Objetivos obscuros.", color:"#2c3e50" },
+              ].map(f=>(
+                <div key={f.name} style={{ borderLeft:`3px solid ${f.color}`, paddingLeft:8, marginBottom:8, paddingBottom:6, borderBottom:"1px solid #0d1f1e" }}>
+                  <div style={{ fontFamily:"'Cinzel',serif", fontSize:10, color:f.color, letterSpacing:1 }}>{f.name}</div>
+                  <div style={{ fontSize:9, color:"#5a8a84", marginTop:2, lineHeight:1.4 }}>{f.desc}</div>
+                </div>
+              ))}
+            </Section>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ NOTAS TAB ═══ */}
+      {tab==="notas" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          <div>
+            <Section title="Objetivos & Missões">
+              <NotesArea value={objetivos} onChange={setObjetivos} placeholder="Objetivos, missões em andamento, dívidas políticas..." rows={8}/>
+            </Section>
+            <Section title="Aliados & Inimigos">
+              <NotesArea value={aliados} onChange={setAliados} placeholder="Personagens importantes, contatos, rivais..." rows={6}/>
+            </Section>
+          </div>
+          <div>
+            <Section title="Notas Gerais">
+              <NotesArea value={notas} onChange={setNotas} placeholder="Anotações livres, lore descoberta, segredos..." rows={8}/>
+            </Section>
+            <Section title="Equipamentos & Inventário">
+              <NotesArea value={equipamentos} onChange={setEquipamentos} placeholder="Inventário completo, itens especiais, moedas..." rows={6}/>
+            </Section>
+          </div>
+        </div>
+      )}
+
+      {/* FOOTER */}
+      <div style={{ marginTop:20, textAlign:"center", fontFamily:"'Cinzel',serif", fontSize:8, letterSpacing:4, color:"#1e3a36", borderTop:"1px solid #0d2420", paddingTop:12 }}>
+        DEEPWOKEN RPG · {name || "SEM NOME"} · {raca.toUpperCase()} · NIV {nivel} · {attunement.toUpperCase()} · {oath.toUpperCase()}
+      </div>
+    </div>
+  );
+}
+
+// ── APP com saves ─────────────────────────────────────────────────────────────
+function App() {
+  const [saves, setSaves] = useState(loadSaves);
+  const [activeSlot, setActiveSlot] = useState(null);
+  const [sheetData, setSheetData] = useState(null);
+  const [showSlots, setShowSlots] = useState(false);
+  const [notification, setNotification] = useState('');
+
+  const notify = (msg) => { setNotification(msg); setTimeout(()=>setNotification(''), 2400); };
+
+  const handleSave = (data) => {
+    const slot = activeSlot || ('char_' + Date.now());
+    const updated = { ...saves, [slot]: { ...data, _savedAt: new Date().toISOString(), _displayName: data.name || slot } };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(updated));
+    setSaves(updated);
+    setActiveSlot(slot);
+    notify(`✓ ${data.name || "Personagem"} salvo!`);
+  };
+
+  const handleLoad = (slot) => {
+    setSheetData({...saves[slot]});
+    setActiveSlot(slot);
+    setShowSlots(false);
+    notify(`✓ ${saves[slot]._displayName || slot} carregado!`);
+  };
+
+  const handleDelete = (slot) => {
+    if (!window.confirm("Deletar este personagem?")) return;
+    const updated = { ...saves };
+    delete updated[slot];
+    localStorage.setItem(SAVE_KEY, JSON.stringify(updated));
+    setSaves(updated);
+    if (activeSlot === slot) { setActiveSlot(null); setSheetData(null); }
+    notify('Personagem deletado.');
+  };
+
+  const slotCount = Object.keys(saves).length;
+
+  const barBtn = (bg, color, size=10) => ({
+    padding:'5px 12px', background:bg, border:`1px solid ${color}66`,
+    color, cursor:'pointer', fontFamily:"'Cinzel',serif",
+    fontSize:size, letterSpacing:2, borderRadius:2, whiteSpace:'nowrap'
+  });
+
+  return (
+    <div style={{ background:'#030b0a', minHeight:'100vh' }}>
+      {/* TOP BAR */}
+      <div style={{
+        background:'linear-gradient(90deg, #030b0a, #0a2520, #030b0a)',
+        borderBottom:'1px solid #1e3a36',
+        padding:'8px 16px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'
+      }}>
+        <span style={{ fontFamily:"'Cinzel',serif", fontSize:11, letterSpacing:4, color:'#4a8a84', flexGrow:1 }}>
+          DEEPWOKEN RPG
+          {activeSlot && saves[activeSlot] &&
+            <span style={{ color:'#2e6a60', marginLeft:12, fontSize:9 }}>· {saves[activeSlot]._displayName}</span>
+          }
+        </span>
+        <button onClick={()=>{ setSheetData(null); setActiveSlot(null); notify('Nova ficha!'); }} style={barBtn('#1e4a44','#4be0c0')}>
+          + NOVO
+        </button>
+        <button onClick={()=>setShowSlots(s=>!s)} style={barBtn('#1a3530','#4a9a94')}>
+          PERSONAGENS{slotCount > 0 ? ` (${slotCount})` : ''}
+        </button>
+      </div>
+
+      {/* NOTIFICATION */}
+      {notification && (
+        <div style={{
+          position:'fixed', top:56, left:'50%', transform:'translateX(-50%)',
+          background:'#0d2e28', border:'1px solid #2e7a6e', borderRadius:4,
+          color:'#4be0c0', fontFamily:"'Cinzel',serif", fontSize:11,
+          padding:'8px 20px', zIndex:9999, letterSpacing:2, boxShadow:'0 4px 20px #000a'
+        }}>{notification}</div>
+      )}
+
+      {/* SLOT PANEL */}
+      {showSlots && (
+        <div style={{ position:'fixed', inset:0, background:'#000c', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={()=>setShowSlots(false)}>
+          <div style={{
+            background:'#060f0e', border:'1px solid #1e4a44', borderRadius:4,
+            padding:24, minWidth:320, maxWidth:480, boxShadow:'0 8px 40px #000',
+            maxHeight:'80vh', overflowY:'auto'
+          }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontFamily:"'Cinzel',serif", fontSize:13, letterSpacing:4, color:'#4a8a84', marginBottom:16, borderBottom:'1px solid #1e3a36', paddingBottom:8 }}>
+              PERSONAGENS SALVOS
+            </div>
+            {slotCount === 0
+              ? <div style={{ color:'#2e5550', fontSize:11, textAlign:'center', padding:20 }}>Nenhuma ficha salva ainda.</div>
+              : Object.entries(saves).map(([slot, data]) => (
+                <div key={slot} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderBottom:'1px solid #0d2420' }}>
+                  <div style={{ flexGrow:1 }}>
+                    <div style={{ fontFamily:"'Cinzel',serif", fontSize:11, color: activeSlot===slot ? '#4be0c0' : '#7ab8b0' }}>
+                      {data._displayName || slot}
+                    </div>
+                    <div style={{ fontSize:9, color:'#2e5550', marginTop:2 }}>
+                      {data.raca} · Nív {data.nivel} · {data.attunement}
+                      {data._savedAt ? ' · ' + new Date(data._savedAt).toLocaleDateString('pt-BR') : ''}
+                    </div>
+                  </div>
+                  <button onClick={()=>handleLoad(slot)} style={barBtn('#1a3530','#4be0c0',9)}>CARREGAR</button>
+                  <button onClick={()=>handleDelete(slot)} style={barBtn('#2a0a0a','#c0392b',9)}>✕</button>
+                </div>
+              ))
+            }
+            <button onClick={()=>setShowSlots(false)} style={{
+              marginTop:16, width:'100%', padding:'8px', background:'transparent',
+              border:'1px solid #1e3a36', color:'#3a6a64', cursor:'pointer',
+              fontFamily:"'Cinzel',serif", fontSize:10, letterSpacing:2
+            }}>FECHAR</button>
+          </div>
+        </div>
+      )}
+
+      <DeepwokenSheet initialData={sheetData} onSave={handleSave}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
 </html>
